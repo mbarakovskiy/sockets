@@ -160,11 +160,11 @@ namespace Sockets
         private static byte[] ProcessRequest(Request request)
         {
             var path = request.RequestUri.Split('?');
-            var pathHead = path[0];
+            var page = path[0];
             var head = new StringBuilder("HTTP/1.1 404 Not Found\r\n\r\n");
             var body = Array.Empty<byte>();
             var cookies = GetCookies(request);
-            switch (pathHead)
+            switch (page)
             {
                 case "/" or "/hello.html":
                 {
@@ -173,8 +173,8 @@ namespace Sockets
                     var bodyText = Encoding.UTF8.GetString(body);
                     if (path.Length > 1)
                     {
-                        var queryString = path[1];
-                        var queryCollection = HttpUtility.ParseQueryString(queryString);
+                        var query = path[1];
+                        var queryCollection = HttpUtility.ParseQueryString(query);
                         var greeting = queryCollection["greeting"];
                         var name = queryCollection["name"];
                         if (greeting != null)
