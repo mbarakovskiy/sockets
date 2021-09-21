@@ -23,14 +23,14 @@ namespace Sockets
     public class AsynchronousSocketListener
     {
         private const int listeningPort = 11000;
-        private static ManualResetEvent connectionEstablished = new ManualResetEvent(false);
+        private static ManualResetEvent connectionEstablished = new(false);
 
         private class ReceivingState
         {
             public Socket ClientSocket;
             public const int BufferSize = 1024;
             public readonly byte[] Buffer = new byte[BufferSize];
-            public readonly List<byte> ReceivedData = new List<byte>();
+            public readonly List<byte> ReceivedData = new();
         }
 
         public static void StartListening()
@@ -159,10 +159,85 @@ namespace Sockets
 
         private static byte[] ProcessRequest(Request request)
         {
-            // TODO
-            var head = new StringBuilder("OK");
-            var body = new byte[0];
+            var path = request.RequestUri.Split('?');
+            var pathHead = path[0];
+            var head = new StringBuilder("HTTP/1.1 404 Not Found\r\n\r\n");
+            var body = Array.Empty<byte>();
+            var cookies = GetCookies(request);
+            switch (pathHead)
+            {
+                case "/" or "/hello.html":
+                {
+                    body = File.ReadAllBytes("hello.html");
+                    head = new StringBuilder("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n");
+                    var bodyText = Encoding.UTF8.GetString(body);
+                    if (path.Length > 1)
+                    {
+                        var queryString = path[1];
+                        var queryCollection = HttpUtility.ParseQueryString(queryString);
+                        var greeting = queryCollection["greeting"];
+                        var name = queryCollection["name"];
+                        if (greeting != null)
+                            bodyText = bodyText.Replace("{{Hello}}", HttpUtility.HtmlEncode(greeting));
+                        if (name != null)
+                        {
+                            bodyText = bodyText.Replace("{{World}}", HttpUtility.HtmlEncode(name));
+                        }
+                        else if (cookies != null && cookies.ContainsKey("name"))
+                        {
+                            name = HttpUtility.UrlDecode(cookies["name"]);
+                            bodyText = bodyText.Replace("{{World}}", HttpUtility.HtmlEncode(name));
+                        }
+                        body = Encoding.UTF8.GetBytes(bodyText);
+                        head.Append($"Content-Length: {body.Length}\r\n");
+                        if (name != null)
+                        {
+                            head.Append($"Set-Cookie: name={HttpUtility.UrlEncode(name)}\r\n");
+                        }
+                    }
+                    else if (cookies != null && cookies.ContainsKey("name"))
+                    {
+                        var name = HttpUtility.UrlDecode(cookies["name"]);
+                        bodyText = bodyText.Replace("{{World}}", HttpUtility.HtmlEncode(name));
+                        body = Encoding.UTF8.GetBytes(bodyText);
+                        head.Append($"Set-Cookie: name={HttpUtility.UrlEncode(name)}\r\n");
+                    }
+                    else
+                    {
+                        body = Encoding.UTF8.GetBytes(bodyText);
+                        head.Append($"Content-Length: {body.Length}\r\n");
+                    }
+
+                    head.Append("\r\n");
+                    break;
+                }
+                case "/groot.gif":
+                    body = File.ReadAllBytes("groot.gif");
+                    head = new StringBuilder("HTTP/1.1 200 OK\r\nContent-Type: image/gif; charset=utf-8\r\n" +
+                                             $"Content-Length: {body.Length}\r\n\r\n");
+                    break;
+                case "/time.html":
+                {
+                    body = File.ReadAllBytes("time.template.html");
+                    var bodyText = Encoding.UTF8.GetString(body);
+                    bodyText = bodyText.Replace("{{ServerTime}}", DateTime.Now.ToString());
+                    body = Encoding.UTF8.GetBytes(bodyText);
+                    head = new StringBuilder("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n" +
+                                             $"Content-Length: {body.Length}\r\n\r\n");
+                    break;
+                }
+            }
+
             return CreateResponseBytes(head, body);
+        }
+
+        private static Dictionary<string, string> GetCookies(Request request)
+        {
+            var cookieHeader = request.Headers.FirstOrDefault(h => h.Name.Equals("Cookie"));
+            var cookies = cookieHeader?.Value.Split("; ")
+                .Select(c => c.Split('='))
+                .ToDictionary(c => c[0], c => c[1]);
+            return cookies;
         }
 
         // Собирает ответ в виде массива байт из байтов строки head и байтов body.
